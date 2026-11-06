@@ -35,7 +35,15 @@ Human writing ensures every lesson has passed human judgment.
 
 ### Pluggable capabilities
 
-Currently supports the CMD tag for executing commands. To extend: add a new tag in the dispatch logic, mapped to a new function. The skeleton stays, capabilities grow.
+The core ships with a capability registry. Adding a new capability takes three steps:
+
+1. Write a function: define handler(text) that receives the tag body and returns an output string.
+2. Register: call register("TAG_NAME", handler), tag name in uppercase.
+3. Verify: run it once to confirm the new tag triggers.
+
+Once registered, the main loop recognizes the tag automatically — no need to touch the loop structure. Three can complete these three steps on its own: it reads its own source, writes the function, registers it, and verifies it, fully autonomously.
+
+The core also provides SELF_EDIT: safely edit itself with automatic backup, ast validation, and rollback on failure. Plus run_cmd auto-backup — when a command touches Three.py, it backs up first.
 
 ## Quick Start
 
@@ -109,14 +117,21 @@ The MIT disclaimer covers civil claims, but users must judge the risks themselve
 
 Three's malleability means any capability can be plugged in as a new tag.
 
-Explored directions:
+Capabilities Three has added on its own:
+- READ_FILE: read a file
+- WRITE_FILE: write a file (with read-back verification)
+- LIST_DIR: list a directory
+- FILE_SIZE: get file size
+
+Built into the core:
+- CMD: execute terminal commands (with auto-backup)
+- SELF_EDIT: safely edit itself (backup, validation, rollback)
+
+Directions that can still be extended:
 - Phone control (ADB: screenshot, tap, swipe, input, key)
 - Visual understanding (vision model analyzing screenshots)
 - Message bridging (QQ message reading and replying)
 - Desktop automation (Firefox Marionette)
-
-Unexplored but architecturally supported:
-- Filesystem operations
 - Network requests
 - Scheduled tasks
 - Multi-agent collaboration
