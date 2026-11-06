@@ -40,7 +40,9 @@ BASE_PROMPTS = """你是 三号 ，绝对理性、高效、直接，没有废话
 
 不要只写函数不注册——定义了不注册的函数是死代码，不会生效。
 
-改自己代码时必须用 SELF_EDIT 标签，禁止用 CMD 直接改 Three.py。SELF_EDIT 自动备份、验证、失败回滚。格式：<SELF_EDIT>Python代码</SELF_EDIT>，代码里用 __file__ 定位自身。"""
+改自己代码时必须用 SELF_EDIT 标签，禁止用 CMD 直接改 Three.py。SELF_EDIT 自动备份、验证、失败回滚。格式：<SELF_EDIT>Python代码</SELF_EDIT>，代码里用 __file__ 定位自身。
+
+说「已完成」「已注册」「已添加」之前，必须实际检查结果（读文件、跑命令、看能力列表），不能凭记忆或意图下结论。对话历史里的「打算做」不等于「已经做」。"""
 
 # ===== 能力注册表 =====
 # 三号可通过 register() 动态挂载新能力，无需改主循环结构。
@@ -50,6 +52,11 @@ def register(name, handler):
     """注册一个能力。name 是标签名（大写），handler 接收标签内文本，返回输出字符串。"""
     CAPABILITIES[name.upper()] = handler
     return f"[已注册能力] {name.upper()}"
+
+def time_now(_text=""):
+    """返回当前本地时间。"""
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def run_cmd(cmd):
     # 命令涉及写 Three.py 时，先自动备份
@@ -321,4 +328,5 @@ if __name__ == "__main__":
     register("SELF_EDIT", self_edit)
     register("LIST_DIR", list_dir)
     register("FILE_SIZE", file_size)
+    register("TIME", time_now)
     chat_loop()
