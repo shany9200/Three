@@ -53,6 +53,51 @@ def register(name, handler):
     CAPABILITIES[name.upper()] = handler
     return f"[已注册能力] {name.upper()}"
 
+def fetch_url(text):
+    """抓取网页内容。text 为 URL，可选第二行指定最大字符数。返回正文文本。"""
+    import urllib.request, ssl, re as _re2
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return "[FETCH] 需要 URL"
+    url = lines[0]
+    limit = 8000
+    if len(lines) > 1:
+        try:
+            limit = int(lines[1])
+        except Exception:
+            pass
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    })
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            raw = r.read()
+            charset = r.headers.get_content_charset() or "utf-8"
+    except Exception as e:
+        return f"[FETCH 失败] {e}"
+    try:
+        html = raw.decode(charset, errors="replace")
+    except Exception:
+        html = raw.decode("utf-8", errors="replace")
+    html = _re2.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", html)
+    html = _re2.sub(r"(?is)<!--.*?-->", " ", html)
+    html = _re2.sub(r"(?i)<br\s*/?>", "\n", html)
+    html = _re2.sub(r"(?i)</(p|div|li|tr|h[1-6])>", "\n", html)
+    text_out = _re2.sub(r"(?s)<[^>]+>", " ", html)
+    import html as _h
+    text_out = _h.unescape(text_out)
+    text_out = _re2.sub(r"[ \t\r\f\v]+", " ", text_out)
+    text_out = _re2.sub(r"\n\s*\n+", "\n", text_out).strip()
+    if len(text_out) > limit:
+        text_out = text_out[:limit] + f"\n...[已截断，原文 {len(text_out)} 字符]"
+    return text_out or "[FETCH] 页面无文本内容"
+
 def time_now(_text=""):
     """返回当前本地时间。"""
     import datetime
@@ -329,4 +374,5 @@ if __name__ == "__main__":
     register("LIST_DIR", list_dir)
     register("FILE_SIZE", file_size)
     register("TIME", time_now)
+    register("FETCH", fetch_url)
     chat_loop()
