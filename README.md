@@ -1,10 +1,14 @@
 # Three
 
+A self-extending AI agent that runs anywhere Termux runs — phones, tablets, 
+TV boxes, old laptops. It writes new capabilities for itself, remembers across 
+sessions, and can operate a phone through ADB.
+
 A malleable low-level agent with the potential to grow in every direction.
 
 **Goal: to become the best assistant for all of humanity.**
 
-**Lightweight: runs on a single phone, available anytime, anywhere.**
+**Lightweight: runs anywhere Termux runs, available anytime, anywhere.**
 
 ## What is Three
 
