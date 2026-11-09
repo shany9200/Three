@@ -103,6 +103,51 @@ def time_now(_text=""):
     import datetime
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def calc_expr(text):
+    """安全求值数学表达式：AST 白名单，仅允许数字与基本运算/函数。"""
+    import ast, math, operator
+    expr = (text or "").strip()
+    if not expr:
+        return "[CALC] 空表达式"
+    _bin = {
+        ast.Add: operator.add, ast.Sub: operator.sub,
+        ast.Mult: operator.mul, ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+    }
+    _un = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+    _funcs = {
+        "abs": abs, "round": round, "min": min, "max": max,
+        "sqrt": math.sqrt, "sin": math.sin, "cos": math.cos,
+        "tan": math.tan, "log": math.log, "log10": math.log10,
+        "exp": math.exp, "floor": math.floor, "ceil": math.ceil,
+        "factorial": math.factorial, "pow": pow,
+    }
+    _consts = {"pi": math.pi, "e": math.e}
+    def _ev(node):
+        if isinstance(node, ast.Expression):
+            return _ev(node.body)
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ValueError("非法常量")
+        if isinstance(node, ast.BinOp) and type(node.op) in _bin:
+            return _bin[type(node.op)](_ev(node.left), _ev(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _un:
+            return _un[type(node.op)](_ev(node.operand))
+        if isinstance(node, ast.Name) and node.id in _consts:
+            return _consts[node.id]
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _funcs:
+            if node.keywords:
+                raise ValueError("不支持关键字参数")
+            return _funcs[node.func.id](*[_ev(a) for a in node.args])
+        raise ValueError("不支持的语法: " + type(node).__name__)
+    try:
+        tree = ast.parse(expr, mode="eval")
+        return str(_ev(tree))
+    except Exception as e:
+        return f"[CALC 错误] {e}"
+
 def run_cmd(cmd):
     # 命令涉及写 Three.py 时，先自动备份
     self_path = os.path.abspath(__file__)
@@ -234,9 +279,41 @@ def file_size(text):
     except Exception as e:
         return "[取大小异常] " + str(e)
 
+
+def _structure_snapshot(path):
+    """解析文件，返回结构快照：函数名集合、函数体是否为空、register 调用数。"""
+    import ast
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except Exception:
+        return None
+    funcs = {}
+    reg_count = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            body = node.body
+            empty = len(body) == 1 and isinstance(body[0], (ast.Pass, ast.Expr))
+            funcs[node.name] = empty
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "register":
+            reg_count += 1
+    return {"funcs": funcs, "reg_count": reg_count}
+
+def _smoke_import(path):
+    """子进程 import 改后的文件，捕获导入期异常。返回 (ok, err)。"""
+    import subprocess, sys
+    code = "import importlib.util,sys;spec=importlib.util.spec_from_file_location('_smoke',%r);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)" % path
+    env = dict(os.environ)
+    env.setdefault("OPENAI_API_KEY", "_smoke_test_key_")
+    try:
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30, env=env)
+        if r.returncode != 0:
+            return False, (r.stderr or r.stdout or "").strip()[-500:]
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
 def self_edit(code):
-    """安全改自己：备份 Three.py → 执行 code 修改 → ast 验证 → 失败回滚。
-    code 是一段 Python 代码，可读写 Three.py。返回结果字符串。"""
+    """安全改自己：备份 → 结构快照 → 执行 → 语法校验 → 结构对比 → 冒烟导入 → 失败回滚。"""
     import shutil
     self_path = os.path.abspath(__file__)
     bak = self_path + ".bak"
@@ -244,6 +321,7 @@ def self_edit(code):
         shutil.copy2(self_path, bak)
     except Exception as e:
         return f"[备份失败] {e}"
+    before = _structure_snapshot(self_path)
     try:
         env = {"__file__": self_path, "os": os, "re": re, "open": open, "print": print}
         exec(code, env)
@@ -256,7 +334,24 @@ def self_edit(code):
     except Exception as e:
         shutil.copy2(bak, self_path)
         return f"[语法错误已回滚] {e}"
-    return f"[已修改并验证] {self_path}，备份在 {bak}"
+    after = _structure_snapshot(self_path)
+    if before and after:
+        lost = set(before["funcs"]) - set(after["funcs"])
+        if lost:
+            shutil.copy2(bak, self_path)
+            return f"[结构校验失败已回滚] 函数丢失: {sorted(lost)}"
+        emptied = [n for n, e in after["funcs"].items() if e and not before["funcs"].get(n, False)]
+        if emptied:
+            shutil.copy2(bak, self_path)
+            return f"[结构校验失败已回滚] 函数被改空: {emptied}"
+        if after["reg_count"] < before["reg_count"]:
+            shutil.copy2(bak, self_path)
+            return f"[结构校验失败已回滚] register 调用减少: {before['reg_count']} -> {after['reg_count']}"
+    ok, err = _smoke_import(self_path)
+    if not ok:
+        shutil.copy2(bak, self_path)
+        return f"[冒烟导入失败已回滚] {err}"
+    return f"[已修改并验证] {self_path}，备份在 {bak}（结构+导入已过，逻辑正确性未验证）"
 
 def build_system_prompt():
     self_path = os.path.abspath(__file__)
@@ -374,5 +469,6 @@ if __name__ == "__main__":
     register("LIST_DIR", list_dir)
     register("FILE_SIZE", file_size)
     register("TIME", time_now)
+    register("CALC", calc_expr)
     register("FETCH", fetch_url)
     chat_loop()

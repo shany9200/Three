@@ -131,15 +131,6 @@ Built into the core:
 - CMD: execute terminal commands (with auto-backup)
 - SELF_EDIT: safely edit itself (backup, validation, rollback)
 
-Directions that can still be extended:
-- Phone control (ADB: screenshot, tap, swipe, input, key)
-- Visual understanding (vision model analyzing screenshots)
-- Message bridging (QQ message reading and replying)
-- Desktop automation (Firefox Marionette)
-- Network requests
-- Scheduled tasks
-- Multi-agent collaboration
-
 ## License
 
 MIT License, Copyright (c) 2026 尚逸
