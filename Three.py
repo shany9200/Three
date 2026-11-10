@@ -313,7 +313,7 @@ def _smoke_import(path):
         return False, str(e)
 
 def self_edit(code):
-    """安全改自己：备份 → 结构快照 → 执行 → 语法校验 → 结构对比 → 冒烟导入 → 失败回滚。"""
+    """安全改自己：备份 → 结构快照 → 执行 → 文件变化检测 → 语法校验 → 结构对比 → 冒烟导入 → 失败回滚。"""
     import shutil
     self_path = os.path.abspath(__file__)
     bak = self_path + ".bak"
@@ -323,11 +323,25 @@ def self_edit(code):
         return f"[备份失败] {e}"
     before = _structure_snapshot(self_path)
     try:
+        st0 = os.stat(self_path)
+        fp0 = (st0.st_mtime_ns, st0.st_size)
+    except Exception as e:
+        return f"[指纹读取失败] {e}"
+    try:
         env = {"__file__": self_path, "os": os, "re": re, "open": open, "print": print}
         exec(code, env)
     except Exception as e:
         shutil.copy2(bak, self_path)
         return f"[执行失败已回滚] {e}"
+    try:
+        st1 = os.stat(self_path)
+        fp1 = (st1.st_mtime_ns, st1.st_size)
+    except Exception as e:
+        shutil.copy2(bak, self_path)
+        return f"[指纹读取失败已回滚] {e}"
+    if fp0 == fp1:
+        shutil.copy2(bak, self_path)
+        return "[未写入已回滚] exec 执行完毕但文件未变化：code 必须显式写回 __file__，否则视为无效修改"
     try:
         import ast
         ast.parse(open(self_path, encoding="utf-8").read())
